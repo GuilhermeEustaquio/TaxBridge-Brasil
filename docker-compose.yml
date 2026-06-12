@@ -1,92 +1,82 @@
-"use client";
+name: taxbridge-brasil
 
-import { Banknote } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Button, Field, InlineAlert, Input } from "@/components/ui/primitives";
-import { useAuth } from "@/lib/auth";
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: taxbridge
+      POSTGRES_PASSWORD: taxbridge
+      POSTGRES_DB: taxbridge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxbridge -d taxbridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-export default function LoginPage() {
-  const { login } = useAuth();
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await login(email, password);
-      router.replace("/dashboard");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha no login");
-    } finally {
-      setLoading(false);
-    }
-  }
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://taxbridge:taxbridge@db:5432/taxbridge
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      CORS_ORIGINS: http://localhost:3000
+      ENV: development
+      AUTO_CREATE_TABLES: "false"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.db.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-950 via-slate-900 to-brand-900 p-4">
-      <div className="w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
-            <Banknote className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-lg font-bold text-white">TaxBridge Brasil</p>
-            <p className="text-[11px] uppercase tracking-widest text-slate-400">
-              A ponte para a Reforma Tributária
-            </p>
-          </div>
-        </div>
+  worker:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://taxbridge:taxbridge@db:5432/taxbridge
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+    command: python -m app.workers.worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
 
-        <div className="rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800">
-          <h1 className="text-lg font-bold text-slate-900 dark:text-white">Entrar</h1>
-          <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-            Acesse o painel de impacto da transição CBS/IBS/IS (2026–2033).
-          </p>
-          <form onSubmit={onSubmit} className="space-y-3">
-            <Field label="E-mail">
-              <Input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="voce@empresa.com.br"
-                required
-                autoFocus
-              />
-            </Field>
-            <Field label="Senha">
-              <Input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="••••••••"
-                required
-              />
-            </Field>
-            {error && <InlineAlert>{error}</InlineAlert>}
-            <Button type="submit" loading={loading} className="w-full">
-              Entrar
-            </Button>
-          </form>
-          <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
-            Ainda não tem conta?{" "}
-            <Link href="/registro" className="font-semibold text-brand-600 hover:underline">
-              Criar organização
-            </Link>
-          </p>
-        </div>
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
 
-        <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300">
-          <p className="font-semibold text-slate-200">Ambiente de demonstração (após seed):</p>
-          <p className="mt-1 font-mono text-[11px]">admin@demo.taxbridge.com.br · TaxBridge@2026</p>
-        </div>
-      </div>
-    </div>
-  );
-}
+volumes:
+  pgdata:
