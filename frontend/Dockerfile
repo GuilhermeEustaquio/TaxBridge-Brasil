@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-fund --no-audit
+# --maxsockets keeps the install's peak memory low so it survives a
+# memory-constrained Docker (parallel builds + small Docker Desktop RAM).
+# The cache mount lets a retry reuse the npm cache instead of re-downloading.
+RUN --mount=type=cache,target=/root/.npm npm ci --no-fund --no-audit --maxsockets 1
 
 FROM node:22-alpine AS builder
 WORKDIR /app
