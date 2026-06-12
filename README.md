@@ -63,6 +63,16 @@ leitor@demo.taxbridge.com.br   / TaxBridge@2026   (Leitor — somente leitura)
 
 Para habilitar o assistente de IA com respostas completas: `ANTHROPIC_API_KEY=sk-... docker compose up`.
 
+### Solução de problemas
+
+- **`npm error Exit handler never called!` durante o build do `web`** — o build de
+  imagens em paralelo estourou a memória do Docker e o processo do `npm ci` foi morto
+  (essa mensagem do npm significa "processo encerrado por sinal", não um bug do lockfile).
+  O `docker-compose.yml` já compartilha a imagem do backend entre `api` e `worker` (build
+  único) e o `Dockerfile` do frontend instala com baixa concorrência para reduzir o pico de
+  memória. Se ainda ocorrer, **aumente a memória do Docker para ≥ 4 GB** (Docker Desktop →
+  Settings → Resources → Memory) ou construa em etapas: `docker compose build && docker compose up`.
+
 ## Rodando sem Docker (dev)
 
 ```bash

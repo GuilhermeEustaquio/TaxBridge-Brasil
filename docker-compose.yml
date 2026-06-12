@@ -29,6 +29,9 @@ services:
 
   api:
     build: ./backend
+    # api and worker share one image so the backend is built once, not twice
+    # in parallel (avoids the build OOM that kills the web npm ci).
+    image: taxbridge-brasil-backend
     environment:
       DATABASE_URL: postgresql+psycopg2://taxbridge:taxbridge@db:5432/taxbridge
       REDIS_URL: redis://redis:6379/0
@@ -56,6 +59,7 @@ services:
 
   worker:
     build: ./backend
+    image: taxbridge-brasil-backend
     environment:
       DATABASE_URL: postgresql+psycopg2://taxbridge:taxbridge@db:5432/taxbridge
       REDIS_URL: redis://redis:6379/0
